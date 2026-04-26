@@ -23,15 +23,36 @@ document.addEventListener('DOMContentLoaded', () => {
     resultsDiv.innerHTML = '<p>Mengambil data...</p>';
 
     try {
-      // Gunakan proxy untuk menghindari pembatasan CORS. API allorigins.win
-      // akan mengambil konten dari URL target dan mengembalikannya tanpa
-      // memerlukan izin CORS.
-      const proxyUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url);
-      const response = await fetch(proxyUrl);
-      if (!response.ok) {
-        throw new Error('Tidak dapat mengambil data. Periksa URL Anda atau coba lagi nanti.');
+      // Fungsi untuk mencoba beberapa proxy CORS. Mengembalikan teks HTML jika salah satu berhasil.
+      async function fetchViaProxies(targetUrl) {
+        // Daftar proxy. Kita mencoba satu per satu sampai ada yang berhasil.
+        const proxies = [
+          (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+          (u) => `https://corsproxy.io/?${encodeURIComponent(u)}`,
+          (u) => `https://api.allorigins.win/get?url=${encodeURIComponent(u)}`,
+        ];
+        for (const buildUrl of proxies) {
+          try {
+            const testUrl = buildUrl(targetUrl);
+            const resp = await fetch(testUrl);
+            if (resp.ok) {
+              // Jika endpoint /get digunakan, respons berbentuk JSON dengan properti `contents`.
+              const ct = resp.headers.get('content-type') || '';
+              if (ct.includes('application/json')) {
+                const data = await resp.json();
+                if (data && data.contents) return data.contents;
+              } else {
+                return await resp.text();
+              }
+            }
+          } catch (e) {
+            // Lanjutkan ke proxy berikutnya
+          }
+        }
+        throw new Error('Tidak dapat mengambil data dari URL target melalui proxy yang tersedia.');
       }
-      const htmlText = await response.text();
+      // Ambil HTML dari URL dengan mencoba beberapa proxy
+      const htmlText = await fetchViaProxies(url);
       const parser = new DOMParser();
       const doc = parser.parseFromString(htmlText, 'text/html');
 
